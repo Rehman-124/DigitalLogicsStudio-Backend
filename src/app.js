@@ -12,10 +12,21 @@ dotenv.config();
 
 const app = express();
 
-// ─── CORS ───────────────────────────────────────────────────────────────────
-// FIX 1: Allow both local dev AND deployed Vercel frontend origin.
-//         Also read CLIENT_URL from env so you only need to update .env on
-//         Vercel, not redeploy code, when the frontend domain changes.
+// ─── Trust proxy (required on Vercel / behind load balancers) ────────────────
+app.set("trust proxy", 1);
+
+// ─── Body parsers — MUST come before CORS and all routes ────────────────────
+// BUG FIX: On Vercel the request body stream can be consumed before it reaches
+// express.json() if middleware order is wrong.  Putting body parsers first
+// ensures they always run, which fixes the 400 "fields are required" error
+// (the body was arriving as {} because it wasn't being parsed).
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+app.use(cookieParser());
+
+// ─── CORS ────────────────────────────────────────────────────────────────────
+// Must list every origin the browser sends.  Credentials:true is required for
+// the httpOnly cookie to be forwarded on cross-origin requests.
 const allowedOrigins = [
   "http://localhost:3000",
   "https://circuits.quantumlogicslimited.com",
@@ -24,49 +35,28 @@ const allowedOrigins = [
   "digital-logics-studio-kccbyx2bo-seno-quantum-coders-projects.vercel.app",
   // Dynamically include whatever CLIENT_URL is set to in the environment
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
-  // Allow Vercel preview deployments (*.vercel.app) — remove if not needed
-  ...(process.env.VERCEL_ENV === "preview"
-    ? [/https:\/\/.*\.vercel\.app$/]
-    : []),
 ];
-
-app.set("trust proxy", 1);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman, server-to-server)
+      // Allow same-origin / no-origin (curl, Postman, server-to-server)
       if (!origin) return callback(null, true);
 
-      // Check string origins
-      const stringMatch = allowedOrigins
-        .filter((o) => typeof o === "string")
-        .includes(origin);
-
-      // Check regex origins (e.g. Vercel preview wildcard)
-      const regexMatch = allowedOrigins
-        .filter((o) => o instanceof RegExp)
-        .some((re) => re.test(origin));
-
-      if (stringMatch || regexMatch) {
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error(`CORS policy blocked origin: ${origin}`));
       }
     },
-    credentials: true, // Required for httpOnly cookie to be sent cross-origin
+    credentials: true, // allow cookies cross-origin
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Set-Cookie"],
   }),
 );
-// ─────────────────────────────────────────────────────────────────────────────
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 // ─── Swagger UI ──────────────────────────────────────────────────────────────
-// FIX 2: Swagger was disabled in production.  Enable it always so you can
-//         verify routes are live on Vercel via /api/docs.
-//         If you truly want production-only restriction, flip the condition back.
 {
   const swaggerUi = require("swagger-ui-express");
   const swaggerSpec = require("./config/swagger");
@@ -76,9 +66,7 @@ app.use(cookieParser());
     swaggerUi.serve,
     swaggerUi.setup(swaggerSpec, {
       customSiteTitle: "Digital Logics Studio — API Docs",
-      swaggerOptions: {
-        withCredentials: true,
-      },
+      swaggerOptions: { withCredentials: true },
     }),
   );
 
@@ -87,9 +75,8 @@ app.use(cookieParser());
     res.send(swaggerSpec);
   });
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
-// Root health ping (Vercel checks this on deploy)
+// ─── Root ping ───────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -97,12 +84,12 @@ app.get("/", (req, res) => {
   });
 });
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
+// ─── API Routes ──────────────────────────────────────────────────────────────
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/progress", progressRoutes);
-// ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Error handlers ──────────────────────────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 

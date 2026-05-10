@@ -12,9 +12,23 @@ function getCookieOptions() {
 
   return {
     httpOnly: true,
-    secure: isProduction, // true in production (HTTPS only)
-    sameSite: isProduction ? "none" : "lax", // "none" required for cross-origin cookies
+    // BUG FIX: secure must be true and sameSite must be "none" in production.
+    // The frontend (circuits.quantumlogicslimited.com) and backend
+    // (digital-logics-studio-backend.vercel.app) are on different domains.
+    // Browsers will ONLY send cross-origin cookies when:
+    //   1. The server sets SameSite=None
+    //   2. The server sets Secure (requires HTTPS — Vercel always uses HTTPS)
+    //   3. The browser request has withCredentials: true  ← already set in apiClient
+    //
+    // With SameSite=Lax (the old value) the cookie was set on login but
+    // silently dropped on every subsequent cross-origin request, causing
+    // every /api/auth/me call to return 401.
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     maxAge: cookieExpiresDays * 24 * 60 * 60 * 1000,
+    // Do NOT set `domain` here — let the browser handle it.
+    // Setting domain to the backend domain blocks the cookie from being sent
+    // to a different-domain frontend.
   };
 }
 
@@ -31,6 +45,7 @@ function setAuthCookie(res, token) {
 }
 
 function clearAuthCookie(res) {
+  // Must use the same options to properly clear the cookie
   res.clearCookie("token", getCookieOptions());
 }
 
