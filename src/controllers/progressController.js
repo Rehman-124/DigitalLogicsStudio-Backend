@@ -1,7 +1,12 @@
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const toDateKey = (date = new Date()) =>
-  new Date(date).toISOString().slice(0, 10);
+const toDateKey = (date = new Date()) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const makeEventId = (type) =>
   `${type}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -43,8 +48,7 @@ async function completeProblem(req, res, next) {
       throw new Error("Problem id must be a positive integer.");
     }
 
-    const { title = "", tags = [], topicId = null } = req.body || {};
-    const dateKey = toDateKey();
+    const { title = "", tags = [], topicId = null, dateKey = toDateKey() } = req.body || {};
     const entry = req.user.getProblemProgress(problemId);
 
     const wasSolved = entry.status === "solved";
@@ -133,8 +137,7 @@ async function recordAttempt(req, res, next) {
       throw new Error("Problem id must be a positive integer.");
     }
 
-    const { title = "", tags = [], topicId = null } = req.body || {};
-    const dateKey = toDateKey();
+    const { title = "", tags = [], topicId = null, dateKey = toDateKey() } = req.body || {};
     const entry = req.user.getProblemProgress(problemId);
 
     entry.attempts += 1;
@@ -176,8 +179,7 @@ async function recordAttempt(req, res, next) {
 async function openTopic(req, res, next) {
   try {
     const { topicId } = req.params;
-    const { title = "", totalSubtopics } = req.body || {};
-    const dateKey = toDateKey();
+    const { title = "", totalSubtopics, dateKey = toDateKey() } = req.body || {};
     const entry = req.user.getTopicProgress(topicId);
 
     entry.title = title || entry.title;
@@ -223,8 +225,8 @@ async function toggleSubtopic(req, res, next) {
       title = "",
       totalSubtopics,
       equivalentSubtopicIds = [],
+      dateKey = toDateKey(),
     } = req.body || {};
-    const dateKey = toDateKey();
     const entry = req.user.getTopicProgress(topicId);
 
     entry.title = title || entry.title;
