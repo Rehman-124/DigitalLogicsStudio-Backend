@@ -21,6 +21,32 @@ function sanitizeUser(user) {
   };
 }
 
+function parsePositiveProblemId(problemId) {
+  const parsedId = Number(problemId);
+
+  if (!Number.isInteger(parsedId) || parsedId <= 0) {
+    throw createHttpError(400, "Problem id must be a positive integer.");
+  }
+
+  return parsedId;
+}
+
+function readProgressPayload(body = {}) {
+  const { title = "", tags = [], topicId = null, totalSubtopics } = body;
+
+  return {
+    title,
+    tags,
+    topicId,
+    totalSubtopics,
+  };
+}
+
+async function saveProgress(user, modifiedFields = []) {
+  modifiedFields.forEach((field) => user.markModified(field));
+  await user.save();
+}
+
 /** Recalculate completion for a topic entry given its totalSubtopics */
 function refreshTopicCompletion(entry) {
   const total = Math.max(entry.totalSubtopics || 0, 1);
@@ -42,11 +68,7 @@ function refreshTopicCompletion(entry) {
  */
 async function completeProblem(req, res, next) {
   try {
-    const problemId = Number(req.params.problemId);
-    if (!Number.isInteger(problemId) || problemId <= 0) {
-      res.status(400);
-      throw new Error("Problem id must be a positive integer.");
-    }
+    const problemId = parsePositiveProblemId(req.params.problemId);
 
     const { title = "", tags = [], topicId = null, dateKey = toDateKey() } = req.body || {};
     const entry = req.user.getProblemProgress(problemId);
@@ -76,10 +98,7 @@ async function completeProblem(req, res, next) {
       });
     }
 
-    req.user.markModified("problemProgress");
-    req.user.markModified("activityLog");
-    req.user.markModified("recentEvents");
-    await req.user.save();
+    await saveProgress(req.user, ["problemProgress", "activityLog", "recentEvents"]);
 
     res.status(200).json({
       success: true,
@@ -97,11 +116,7 @@ async function completeProblem(req, res, next) {
  */
 async function uncompleteProblem(req, res, next) {
   try {
-    const problemId = Number(req.params.problemId);
-    if (!Number.isInteger(problemId) || problemId <= 0) {
-      res.status(400);
-      throw new Error("Problem id must be a positive integer.");
-    }
+    const problemId = parsePositiveProblemId(req.params.problemId);
 
     const entry = req.user.getProblemProgress(problemId);
     if (entry.status === "solved") {
@@ -112,8 +127,7 @@ async function uncompleteProblem(req, res, next) {
     req.user.solvedProblems = req.user.solvedProblems.filter(
       (id) => id !== problemId,
     );
-    req.user.markModified("problemProgress");
-    await req.user.save();
+    await saveProgress(req.user, ["problemProgress"]);
 
     res.status(200).json({
       success: true,
@@ -131,11 +145,7 @@ async function uncompleteProblem(req, res, next) {
  */
 async function recordAttempt(req, res, next) {
   try {
-    const problemId = Number(req.params.problemId);
-    if (!Number.isInteger(problemId) || problemId <= 0) {
-      res.status(400);
-      throw new Error("Problem id must be a positive integer.");
-    }
+    const problemId = parsePositiveProblemId(req.params.problemId);
 
     const { title = "", tags = [], topicId = null, dateKey = toDateKey() } = req.body || {};
     const entry = req.user.getProblemProgress(problemId);
@@ -159,10 +169,7 @@ async function recordAttempt(req, res, next) {
       title: entry.title,
     });
 
-    req.user.markModified("problemProgress");
-    req.user.markModified("activityLog");
-    req.user.markModified("recentEvents");
-    await req.user.save();
+    await saveProgress(req.user, ["problemProgress", "activityLog", "recentEvents"]);
 
     res.status(200).json({ success: true, message: "Attempt recorded." });
   } catch (error) {
@@ -199,10 +206,7 @@ async function openTopic(req, res, next) {
       title: entry.title,
     });
 
-    req.user.markModified("topicProgress");
-    req.user.markModified("activityLog");
-    req.user.markModified("recentEvents");
-    await req.user.save();
+    await saveProgress(req.user, ["topicProgress", "activityLog", "recentEvents"]);
 
     res.status(200).json({
       success: true,
@@ -263,10 +267,7 @@ async function toggleSubtopic(req, res, next) {
       });
     }
 
-    req.user.markModified("topicProgress");
-    req.user.markModified("activityLog");
-    req.user.markModified("recentEvents");
-    await req.user.save();
+    await saveProgress(req.user, ["topicProgress", "activityLog", "recentEvents"]);
 
     res.status(200).json({
       success: true,
